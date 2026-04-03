@@ -1,0 +1,3 @@
+# npm falls back to .gitignore when .npmignore is absent.
+# Keep this file so build artifacts in dist/ remain publishable even though
+# dist/ stays ignored in Git.

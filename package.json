@@ -1,0 +1,132 @@
+{
+  "name": "pino-ctx",
+  "version": "1.0.0",
+  "description": "AsyncLocalStorage-powered contextual logging for Pino",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./axios": {
+      "types": "./dist/axios.d.ts",
+      "import": "./dist/axios.js",
+      "require": "./dist/axios.cjs"
+    },
+    "./createContextLogger": {
+      "types": "./dist/createContextLogger.d.ts",
+      "import": "./dist/createContextLogger.js",
+      "require": "./dist/createContextLogger.cjs"
+    },
+    "./fastify": {
+      "types": "./dist/adapters/fastify.d.ts",
+      "import": "./dist/adapters/fastify.js",
+      "require": "./dist/adapters/fastify.cjs"
+    },
+    "./express": {
+      "types": "./dist/adapters/express.d.ts",
+      "import": "./dist/adapters/express.js",
+      "require": "./dist/adapters/express.cjs"
+    },
+    "./hono": {
+      "types": "./dist/adapters/hono.d.ts",
+      "import": "./dist/adapters/hono.js",
+      "require": "./dist/adapters/hono.cjs"
+    },
+    "./koa": {
+      "types": "./dist/adapters/koa.d.ts",
+      "import": "./dist/adapters/koa.js",
+      "require": "./dist/adapters/koa.cjs"
+    },
+    "./propagation": {
+      "types": "./dist/propagation.d.ts",
+      "import": "./dist/propagation.js",
+      "require": "./dist/propagation.cjs"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "import": "./dist/store.js",
+      "require": "./dist/store.cjs"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry.d.ts",
+      "import": "./dist/telemetry.js",
+      "require": "./dist/telemetry.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "examples",
+    "benchmarks"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist coverage .tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "bench": "tsx benchmarks/context-overhead.ts"
+  },
+  "dependencies": {
+    "pino": "^9.0.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": ">=1.0.0",
+    "axios": ">=1.0.0",
+    "express": ">=4.18.0",
+    "fastify": ">=4.0.0",
+    "hono": ">=4.0.0",
+    "koa": ">=2.14.0",
+    "pino": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "axios": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "koa": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^1.30.1",
+    "@types/express": "^4.17.21",
+    "@types/koa": "^2.15.0",
+    "@types/supertest": "^6.0.3",
+    "axios": "^1.7.9",
+    "express": "^4.21.2",
+    "fastify": "^4.29.0",
+    "hono": "^4.6.10",
+    "koa": "^2.16.1",
+    "pino-pretty": "^11.3.0",
+    "supertest": "^7.0.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.1"
+  }
+}

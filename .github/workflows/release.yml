@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG="v${PACKAGE_VERSION}"
+          GH_TOKEN_VALUE="${GH_RELEASE_TOKEN:-${GITHUB_TOKEN_FALLBACK:-}}"
+
+          echo "package_name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            VERSION_FROM_TAG="${TAG#v}"
+
+            if [[ "${VERSION_FROM_TAG}" != "${PACKAGE_VERSION}" ]]; then
+              echo "::warning::Tag version (${VERSION_FROM_TAG}) does not match package.json version (${PACKAGE_VERSION}). Skipping release workflow."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              echo "should_publish_npm=false" >> "$GITHUB_OUTPUT"
+              echo "should_create_github_release=false" >> "$GITHUB_OUTPUT"
+              echo "npm_reason=version-mismatch" >> "$GITHUB_OUTPUT"
+              echo "github_reason=version-mismatch" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          SHOULD_PUBLISH_NPM=true
+          NPM_REASON=ready
+          if [[ -z "${NPM_TOKEN}" ]]; then
+            SHOULD_PUBLISH_NPM=false
+            NPM_REASON=missing-npm-token
+            echo "::warning::NPM_TOKEN secret is missing. npm publish will be skipped."
+          elif npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            SHOULD_PUBLISH_NPM=false
+            NPM_REASON=version-exists
+            echo "::warning::${PACKAGE_NAME}@${PACKAGE_VERSION} is already published on npm. npm publish will be skipped."
+          fi
+
+          SHOULD_CREATE_GITHUB_RELEASE=true
+          GITHUB_REASON=ready
+          if [[ -z "${GH_TOKEN_VALUE}" ]]; then
+            SHOULD_CREATE_GITHUB_RELEASE=false
+            GITHUB_REASON=missing-github-token
+            echo "::warning::GH_RELEASE_TOKEN is missing and no fallback GitHub token is available. GitHub release creation will be skipped."
+          fi
+
+          SHOULD_RUN=false
+          if [[ "${SHOULD_PUBLISH_NPM}" == "true" || "${SHOULD_CREATE_GITHUB_RELEASE}" == "true" ]]; then
+            SHOULD_RUN=true
+          fi
+
+          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
+          echo "should_publish_npm=${SHOULD_PUBLISH_NPM}" >> "$GITHUB_OUTPUT"
+          echo "should_create_github_release=${SHOULD_CREATE_GITHUB_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "npm_reason=${NPM_REASON}" >> "$GITHUB_OUTPUT"
+          echo "github_reason=${GITHUB_REASON}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.meta.outputs.should_run == 'true'
+        run: npm ci
+
+      - name: Typecheck
+        if: steps.meta.outputs.should_run == 'true'
+        run: npm run typecheck
+
+      - name: Run tests
+        if: steps.meta.outputs.should_run == 'true'
+        run: npm test
+
+      - name: Build package
+        if: steps.meta.outputs.should_run == 'true'
+        run: npm run build
+
+      - name: Pack release artifact
+        if: steps.meta.outputs.should_run == 'true'
+        id: pack
+        shell: bash
+        run: |
+          TARBALL=$(npm pack | tail -n 1)
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        if: steps.meta.outputs.should_publish_npm == 'true'
+        id: publish
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set +e
+          OUTPUT_FILE=$(mktemp)
+          npm publish --provenance >"${OUTPUT_FILE}" 2>&1
+          STATUS=$?
+          set -e
+
+          cat "${OUTPUT_FILE}"
+
+          if [[ ${STATUS} -eq 0 ]]; then
+            echo "npm_publish_result=published" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          if grep -Eq "previously published versions|cannot publish over the previously published version|cannot publish over previously published version" "${OUTPUT_FILE}"; then
+            echo "::warning::${{ steps.meta.outputs.package_name }}@${{ steps.meta.outputs.package_version }} was published before publish step completed. Treating as already released."
+            echo "npm_publish_result=already-exists" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          exit "${STATUS}"
+
+      - name: Create GitHub release
+        if: steps.meta.outputs.should_create_github_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::warning::GitHub release ${{ steps.meta.outputs.tag }} already exists. GitHub release creation will be skipped."
+            echo "github_release_result=already-exists" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.pack.outputs.tarball }}" \
+            --title "${{ steps.meta.outputs.tag }}" \
+            --notes "Release ${{ steps.meta.outputs.tag }} for ${{ steps.meta.outputs.package_name }}"
+
+          echo "github_release_result=created" >> "$GITHUB_ENV"
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ "${{ steps.meta.outputs.should_publish_npm }}" == "true" ]]; then
+            NPM_RESULT="${npm_publish_result:-attempted}"
+          else
+            NPM_RESULT="skipped (${{ steps.meta.outputs.npm_reason }})"
+          fi
+
+          if [[ "${{ steps.meta.outputs.should_create_github_release }}" == "true" ]]; then
+            GITHUB_RESULT="${github_release_result:-created}"
+          else
+            GITHUB_RESULT="skipped (${{ steps.meta.outputs.github_reason }})"
+          fi
+
+          {
+            echo "## Release summary"
+            echo ""
+            echo "- package: \`${{ steps.meta.outputs.package_name }}\`"
+            echo "- version: \`${{ steps.meta.outputs.package_version }}\`"
+            echo "- tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- trigger: \`${{ github.event_name }}\`"
+            echo "- npm publish: \`${NPM_RESULT}\`"
+            echo "- github release: \`${GITHUB_RESULT}\`"
+            if [[ "${{ steps.meta.outputs.should_create_github_release }}" == "true" ]]; then
+              echo "- release url: https://github.com/${{ github.repository }}/releases/tag/${{ steps.meta.outputs.tag }}"
+            fi
+            if [[ "${{ steps.meta.outputs.should_publish_npm }}" == "true" ]]; then
+              echo "- npm url: https://www.npmjs.com/package/${{ steps.meta.outputs.package_name }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
