@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "AsyncLocalStorage-powered contextual logging for Pino",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/flyingsquirrel0419/pino-ctx"
+  },
+  "homepage": "https://github.com/flyingsquirrel0419/pino-ctx",
+  "bugs": {
+    "url": "https://github.com/flyingsquirrel0419/pino-ctx/issues"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
